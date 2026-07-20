@@ -835,6 +835,12 @@ def cmd_remove(args):
     print("Reopen rekordbox to verify; `rbx undo` re-inserts the removed rows.")
 
 
+def cmd_transfer(args):
+    import transfer
+
+    transfer.dispatch(args, sys.modules[__name__])
+
+
 def cmd_undo(args):
     journals = sorted(UNDO_DIR.glob("*.json"))
     if not journals:
@@ -854,6 +860,14 @@ def cmd_undo(args):
             except Exception as e:
                 print(f"  could not delete {p['name']}: {e}")
         db.commit()
+        done = jpath.with_suffix(".undone")
+        jpath.rename(done)
+        print(f"Undo complete. Journal archived as {done.name}")
+        return
+    if journal["cmd"] == "transfer-import":
+        import transfer
+
+        transfer.undo_import(db, journal, sys.modules[__name__])
         done = jpath.with_suffix(".undone")
         jpath.rename(done)
         print(f"Undo complete. Journal archived as {done.name}")
@@ -1580,6 +1594,21 @@ def main():
     p.add_argument("--json")
     p.add_argument("--limit", type=int)
 
+    p = sp.add_parser("transfer", help="export/import track bundles (audio + cues + beat grid)")
+    trs = p.add_subparsers(dest="tr_cmd", required=True)
+    x = trs.add_parser("export", help="package a playlist (or ids) into a bundle zip")
+    x.add_argument("--playlist")
+    x.add_argument("--ids", help="comma-separated content IDs")
+    x.add_argument("-o", "--output", help="bundle zip path")
+    x = trs.add_parser("inspect", help="list what a bundle contains")
+    x.add_argument("bundle")
+    x = trs.add_parser("import", help="import a bundle into this library")
+    x.add_argument("bundle")
+    x.add_argument("--dest", help="folder to copy audio into (default ~/Music/rbx-imports/<bundle>)")
+    x.add_argument("--no-anlz", action="store_true", help="skip beat-grid install; rekordbox re-analyzes")
+    x.add_argument("--no-playlist", action="store_true", help="don't recreate the bundle's playlist")
+    x.add_argument("--apply", action="store_true")
+
     p = sp.add_parser("undo", help="reverse the latest (or named) write batch")
     p.add_argument("journal", nargs="?")
 
@@ -1600,6 +1629,7 @@ def main():
         "doctor": cmd_doctor,
         "playlist": cmd_playlist,
         "query": cmd_query,
+        "transfer": cmd_transfer,
         "undo": cmd_undo,
         "backup": cmd_backup,
     }[args.cmd](args)

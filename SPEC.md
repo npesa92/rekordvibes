@@ -161,6 +161,39 @@ truthiness-test an AnlzFile, use `is not None`.
 - Free-form read-only questions via SQL/ORM ("tracks over 130 BPM in 8A").
 - CSV/JSON export of the collection or any subset.
 
+### C8 — Library-to-library transfer (`rbx transfer`)
+
+Move tracks to another person's rekordbox library with performance data
+intact. Design decision: **never write the recipient's DB from the outside
+world** — the bundle is inert data, and the import runs on the recipient's
+machine through this same CLI, under the same rails (baseline required,
+rekordbox quit, backup, dry-run, undo journal).
+
+Bundle = one zip, platform-neutral (no absolute paths inside):
+- `manifest.json` — format version (`rbx-transfer/1`), per-track metadata
+  (title/artist/album/genre/key + verbatim DjmdContent columns), all DjmdCue
+  rows (portable columns only; identity/sync columns regenerated on import),
+  SHA-256 per audio file.
+- `audio/NNN_<name>` — bit-exact copies. `anlz/<id>/` — beat grid/waveform/
+  phrase files.
+
+Commands:
+- `transfer export --playlist|--ids -o zip` — read-only; skips streaming and
+  missing tracks with a warning; refuses whole-collection export.
+- `transfer inspect zip` — contents listing.
+- `transfer import zip [--dest DIR] [--apply]` — hash-verify before any
+  write; copy audio into dest (never overwrite; skip tracks already in the
+  collection); create rows via pyrekordbox (`add_content`, get-or-create
+  artist/album/genre/key, cue rows); install ANLZ files under a fresh
+  `share/PIONEER/USBANLZ/<uuid>` dir with the embedded audio path rewritten
+  (`AnlzFile.set_path`) so grid/waveform survive — on any ANLZ failure, fall
+  back to `Analysed=0` and let rekordbox re-analyze; recreate the bundle's
+  playlist (post-baseline, so editable). Undo deletes created rows + ANLZ
+  dirs; copied audio stays on disk.
+
+Not transferred (by design/format): MyTags, play counts, histories, mixer
+params, intelligent playlists.
+
 ## 4. Safety model (non-negotiable rails)
 
 1. **rekordbox must be quit for any write** (preflight `pgrep`; skill asks the
@@ -224,3 +257,10 @@ truthiness-test an AnlzFile, use `is not None`.
 - Kill the script mid-batch → every track fully updated or fully untouched.
 - Dry-run provably writes nothing (DB + file checksums unchanged).
 - A track whose fields are already correct is left 100% untouched.
+- Transfer round-trip: export tracks with hot cues → bundle cues match
+  DjmdCue rows column-for-column, audio hashes match the originals, ANLZ
+  files parse → import on a clean dest → cues at identical ms positions,
+  grid visible in rekordbox without re-analysis, ANLZ embedded path matches
+  the copied file → `undo` removes rows + installed ANLZ dirs completely.
+- Import refuses: hash mismatch (before any write), dest file collision,
+  track already in collection (per-track skip, not abort).
