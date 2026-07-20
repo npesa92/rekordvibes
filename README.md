@@ -83,3 +83,17 @@ underneath even if it's asked nicely.
 
 Now go fix your library. Your future self, mid-set, in the dark, scrolling
 for the next track — they're counting on you. ✨
+
+## Credits & contributing
+
+None of this would work without
+[pyrekordbox](https://github.com/dylanljones/pyrekordbox), which does the
+genuinely hard part — reading and writing the encrypted rekordbox 7
+database. rekordvibes is the vibes layer on top; pyrekordbox is the
+foundation. Go star it.
+
+Contributions are welcome — especially Windows testing reports, new junk
+patterns for the title cleaner, and bug reports with a `rbx status` dump
+attached. Open an issue or a PR. Just remember the sacred rules above:
+anything that touches the library must be dry-run first, reversible, and
+must never lay a finger on the audio files.
