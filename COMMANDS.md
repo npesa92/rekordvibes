@@ -92,5 +92,5 @@ Every mutating command follows the same shape:
 ```bash
 rbx clean --playlist "crate 1"          # 1. dry run — see the table
 rbx clean --playlist "crate 1" --apply  # 2. backup, write, undo journal
-rbx undo                                # 3. (if you hate it) full reverse
+rbx undo                                # 3. (if needed) full reverse
 ```

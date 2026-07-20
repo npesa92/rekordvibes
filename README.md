@@ -1,105 +1,102 @@
-# rekordvibes 🎛️
+# rekordvibes
 
-Your rekordbox library, but the vibes are immaculate.
+A command-line toolkit for managing a rekordbox 7 library: metadata
+cleanup, tag synchronization, library hygiene, playlist management, track
+analysis, and library-to-library transfer. All changes are reversible, and
+audio files are never modified, renamed, moved, or deleted.
 
-You know the tracks. The ones titled
-`01. Artist_-_Track_Name_(Official Video)_[FREE DL]_320kbps.mp3` with an
-empty artist field and an album called nothing. They play fine, but every
-time you scroll past one, a little part of your set dies. **rekordvibes**
-reads your rekordbox 7 library, finds the mess, and fixes the metadata —
-carefully, reversibly, and without ever touching your audio files.
+It reads and writes the encrypted rekordbox database directly (via
+[pyrekordbox](https://github.com/dylanljones/pyrekordbox)), so fixes apply
+to the library itself — no XML export/import round-trips.
 
-## What it does
+## Features
 
-- **Cleans the junk** — parses artist / title / album / track number out of
-  polluted title fields, strips the `(Official Video)` `[FREE DL]` `320kbps`
-  residue, and writes it back to both the rekordbox DB *and* the embedded
-  tags (ID3/MP4/FLAC), so it stays fixed everywhere.
-- **Knows when it doesn't know** — every proposed fix gets a confidence
-  tier. High-confidence fixes batch clean; ambiguous ones ("is the name in
-  that `(X Flip)` the producer, or the artist they flipped?") get exported
-  for an AI agent with actual music knowledge to adjudicate. You approve
-  everything before it lands.
-- **Checks the vibe compatibility** — `rbx mixable` ranks what mixes into a
-  track by Camelot key, BPM (half/double-time aware), intro length, and
-  energy handoff. `rbx similar` finds tracks that *feel* alike by drum
-  pattern and sound texture. `rbx clusters` sorts your crates into rhythm
-  families.
-- **Plays doctor** — missing files, duplicates, tag drift, untracked audio.
-- **Shares the vibes** — `rbx transfer` packs a playlist into a single zip
-  (audio, metadata, hot cues, memory cues, beat grid) that imports into a
-  friend's library on the other side. Their hot cues land exactly where
-  yours were, grid included — no re-analyzing, no re-cueing. AirDrop it,
-  scp it, sneakernet it; the bundle doesn't care.
-- **Builds playlists** — additive only. It can create and manage its own;
-  everything that existed before it arrived is frozen, forever.
+- **Metadata cleanup** — parses artist / title / album / track number out
+  of polluted title fields (e.g.
+  `01. Artist_-_Track_Name_(Official Video)_[FREE DL]_320kbps.mp3`), strips
+  the residue, and writes the result to both the rekordbox DB *and* the
+  embedded file tags (ID3/MP4/FLAC), so the fix persists everywhere.
+- **Confidence-tiered fixes** — every proposed change gets a confidence
+  tier. High-confidence fixes can be batch-applied; ambiguous cases (is the
+  name in `(X Flip)` the producer, or the artist being flipped?) are
+  exported for adjudication by an AI agent with music knowledge. Nothing is
+  written without explicit approval.
+- **Mix analysis** — `rbx mixable` ranks candidate transitions by Camelot
+  key compatibility, BPM (half/double-time aware), intro length, and energy
+  handoff. `rbx similar` finds tracks with matching drum patterns or sound
+  texture. `rbx clusters` groups a collection into rhythm families.
+- **Library hygiene** — `rbx doctor` reports missing files, duplicates,
+  tag drift, and untracked audio.
+- **Library-to-library transfer** — `rbx transfer` packages a playlist
+  into a single zip (audio, metadata, hot cues, memory cues, beat grid)
+  that imports into another rekordbox library via the same CLI. Cues and
+  grid arrive intact; no re-analysis or re-cueing required. The bundle is a
+  plain file — transfer it by AirDrop, scp, or USB.
+- **Playlist management** — additive only. The tool can create and manage
+  its own playlists; every playlist that existed before initialization is
+  permanently read-only.
 
-## The sacred rules
+## Safety model
 
-The vibes are chill; the safety model is not.
+1. **Audio files are never renamed, moved, or deleted.** Metadata only.
+2. **No writes while rekordbox is open.** The CLI refuses to run mutating
+   commands while the process is detected.
+3. **No writes before `rbx init`.** Initialization snapshots the library
+   and freezes every existing playlist — read-only from then on.
+4. **Every write is dry-run first.** The proposed changes are shown as a
+   table; nothing happens without `--apply`. Each applied batch takes a
+   fresh backup first and leaves an undo journal, so `rbx undo` can
+   reverse it completely.
 
-1. **Your audio files are never renamed, moved, or deleted.** Metadata only.
-2. **No writes while rekordbox is open.** It refuses, politely.
-3. **No writes before `rbx init`.** Init snapshots your library and freezes
-   every existing playlist — read-only forever after.
-4. **Everything is dry-run first.** You see the table, you say yes, then it
-   writes — after taking a fresh backup, and it leaves an undo journal so
-   `rbx undo` can reverse any batch completely.
-
-## Get the vibes
+## Installation
 
 ```bash
 git clone https://github.com/npesa92/rekordvibes.git
 cd rekordvibes
-./bootstrap.sh    # builds the venv, finds your library, diagnoses everything
+./bootstrap.sh    # builds the venv, locates the library, runs diagnostics
 ./venv/bin/python scripts/rbx.py init    # one-time: snapshot + freeze
-./venv/bin/python scripts/rbx.py recommend    # "what should I clean up?"
+./venv/bin/python scripts/rbx.py recommend    # prioritized cleanup suggestions
 ```
 
-Works out of the box on macOS; finds your library automatically (or point
-`RBX_REKORDBOX_DIR` at it). Windows support is written but untested — run
-`bootstrap.ps1` and tell us how it went. Details in [INSTALL.md](INSTALL.md);
-the full command reference with examples is [COMMANDS.md](COMMANDS.md),
-Claude's operating manual is [SKILL.md](SKILL.md), and the design doc is
+Works out of the box on macOS; the library is located automatically (or set
+`RBX_REKORDBOX_DIR`). Windows support is implemented but untested — run
+`bootstrap.ps1` and report results. Details in [INSTALL.md](INSTALL.md);
+the full command reference with examples is [COMMANDS.md](COMMANDS.md), the
+agent operating manual is [SKILL.md](SKILL.md), and the design doc is
 [SPEC.md](SPEC.md).
 
-## Or just let Claude Code do it 🤖
+## Using it with Claude Code
 
-This repo *is* a [Claude Code](https://claude.com/claude-code) skill — the
-whole thing is designed to be driven by Claude, not memorized by you. The
-lazy (correct) install is to open Claude Code and say:
+This repo is also a [Claude Code](https://claude.com/claude-code) skill —
+it is designed to be driven by an agent rather than memorized. To install
+it that way, open Claude Code and say:
 
 > Install the skill at https://github.com/npesa92/rekordvibes.git
 > into my skills directory
 
 Claude will clone it into `~/.claude/skills/rekordvibes` and run the
-bootstrap. From then on, just talk to it about your library:
+bootstrap. From then on, requests map to commands directly:
 
 > *"what's the state of my rekordbox library?"* → `rbx status` / `recommend`
-> *"clean up my metadata"* → dry-run, shows you the table, waits for your yes
+> *"clean up my metadata"* → dry-run, shows the table, waits for confirmation
 > *"what mixes out of this track?"* → `rbx mixable`
 
-Claude Code runs with real system permissions — it can create the venv, read
-the library, and write fixes — so it will ask you to approve commands along
-the way; that's the permission model working as intended. The guardrails
-travel with the skill: [SKILL.md](SKILL.md) instructs Claude to always
-dry-run first, show you a digestible summary, and never apply anything
-without your explicit confirmation — and the CLI enforces the same rules
-underneath even if it's asked nicely.
-
-Now go fix your library. Your future self, mid-set, in the dark, scrolling
-for the next track — they're counting on you. ✨
+Claude Code runs with real system permissions — it can create the venv,
+read the library, and write fixes — so it will ask for command approval
+along the way; that is the permission model working as intended. The
+guardrails travel with the skill: [SKILL.md](SKILL.md) instructs the agent
+to always dry-run first, present a digestible summary, and never apply
+anything without explicit confirmation — and the CLI enforces the same
+rules independently.
 
 ## Credits & contributing
 
-None of this would work without
-[pyrekordbox](https://github.com/dylanljones/pyrekordbox), which does the
-genuinely hard part — reading and writing the encrypted rekordbox 7
-database. rekordvibes is the vibes layer on top; pyrekordbox is the
-foundation. Go star it.
+This project depends on
+[pyrekordbox](https://github.com/dylanljones/pyrekordbox), which handles
+the hard part — reading and writing the encrypted rekordbox 7 database.
 
 Contributions are welcome — especially Windows testing reports, new junk
-patterns for the title cleaner, and bug reports with a `rbx status` dump
-attached. Open an issue or a PR. Just remember the sacred rules above:
-anything that touches the library must be dry-run first, reversible, and
-must never lay a finger on the audio files.
+patterns for the title cleaner, and bug reports with an `rbx status` dump
+attached. Open an issue or a PR. All contributions must follow the safety
+model above: anything that touches the library must be dry-run first,
+reversible, and must never modify audio files.
