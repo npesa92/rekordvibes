@@ -32,6 +32,14 @@ to the library itself — no XML export/import round-trips.
   that imports into another rekordbox library via the same CLI. Cues and
   grid arrive intact; no re-analysis or re-cueing required. The bundle is a
   plain file — transfer it by AirDrop, scp, or USB.
+- **USB checker** — `rbx usb check` verifies an exported stick end to end:
+  database parses, every track's audio is present and un-truncated, beat
+  grids/waveforms intact, playlists resolve, filesystem is player-friendly.
+  Read-only, needs no library — vet anyone's stick before a gig.
+- **Serato interop** — `rbx tagsync --serato` writes your hot cues and beat
+  grids into the files' tags in Serato's own format, so every USB you export
+  from rekordbox also opens in Serato DJ with cues intact; `rbx usb serato`
+  puts a Serato database + crates (mirroring your playlists) on the stick.
 - **Playlist management** — additive only. The tool can create and manage
   its own playlists; every playlist that existed before initialization is
   permanently read-only.

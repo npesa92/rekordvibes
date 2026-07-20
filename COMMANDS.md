@@ -85,6 +85,24 @@ counts, histories, mixer params.
 | `rbx transfer import` | write | Imports a bundle into *this* library: verifies every hash before touching anything, copies audio into `--dest` (never overwrites; tracks already in the collection are skipped), creates the DB rows, installs the beat-grid files with their embedded path rewritten (so no re-analysis needed), and recreates the bundle's playlist. Undo removes it all; copied audio stays on disk. | `rbx transfer import for-alex.zip` (dry-run) · `rbx transfer import for-alex.zip --dest ~/Music/from-nick --apply` |
 | | | `--dest DIR` where audio lands (default `~/Music/rbx-imports/<bundle>/`) · `--no-anlz` let rekordbox re-analyze instead · `--no-playlist` skip playlist recreation | |
 
+## USB & Serato
+
+Works on a rekordbox device export (a stick prepared with rekordbox's
+"Export to device"). `usb check` needs nothing but the stick — no library,
+no `rbx init` — so it can vet anyone's USB before a gig.
+
+| Command | R/W | What it does | Example |
+|---|---|---|---|
+| `rbx usb check` | read | Integrity ladder over an exported stick: export.pdb parses; every track's audio file exists at the right size (truncation = the classic USB corruption; caveat: export.pdb records the library DB's file_size, which can lag the real file when tags were edited after import — a deficit under ~64 KB / 0.1% whose header still parses with matching duration is a WARN `audio-size-drift`, not a FAIL); ANLZ beat-grid/waveform files exist and parse; playlist entries all resolve; orphaned audio reported; quick per-file header/duration checks; filesystem sanity (FAT32/exFAT, 4 GB limit, volume label). Never writes a byte. Exit 0 = healthy. | `rbx usb check /Volumes/MYUSB` · `--deep` (full ffmpeg decode of every file) · `--json` |
+| `rbx usb serato` | write* | Makes the same stick open in Serato DJ: builds `_Serato_/database V2` + one crate per rekordbox playlist (folders become `%%`-nested subcrates) from the stick's own export.pdb. *Writes only the new `_Serato_/` folder — PIONEER/, the pdb, and audio are untouched. Dry-run first, like everything else. | `rbx usb serato /Volumes/MYUSB --apply` · `--playlist "peak time"` (repeatable) |
+| | | `--cues` also converts hot cues + beat grid from the stick's ANLZ files into Serato tag frames on the stick's audio copies — only needed for sticks exported *before* `tagsync --serato` was run on the library. `--wipe` removes `_Serato_/` again. | `rbx usb serato /Volumes/MYUSB --cues --apply` |
+| `rbx tagsync --serato` | write | The better long-term path: writes Serato hot-cue + beat-grid tag frames (from the DB's cues + rekordbox's ANLZ grid) onto the **library** files themselves. rekordbox's USB export copies files verbatim, so every stick exported afterwards opens in Serato with cues already in place. Hot cues only, straight across (A–H → cues 1–8, colors carried); memory cues are not converted; loop hot cues become a cue at the loop-in point. | `rbx tagsync --serato` (dry-run) · `rbx tagsync --serato --playlist "gig" --apply` |
+
+Caveats: any cue edits made *inside Serato* on these files are overwritten on
+the next `--serato --apply` (rekordbox is the source of truth). MP3 cue
+positions can differ between the two apps by ~20 ms on some files (decoder
+delay) — audible to nobody at 174 BPM, but stated for honesty.
+
 ## The standard write workflow
 
 Every mutating command follows the same shape:

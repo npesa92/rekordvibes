@@ -1,6 +1,6 @@
 ---
 name: rekordvibes
-description: Manage the local rekordbox 7 DJ collection — fix polluted track metadata (titles containing artist/album/filename junk), sync tags between the DB and audio files, additive playlist management, hygiene checks (missing files, duplicates), queries and exports. Use when the user mentions rekordbox, their DJ library/collection, track metadata cleanup, playlists, or cue/track organization.
+description: Manage the local rekordbox 7 DJ collection — fix polluted track metadata (titles containing artist/album/filename junk), sync tags between the DB and audio files, additive playlist management, hygiene checks (missing files, duplicates), queries and exports, USB export integrity checking, and Serato DJ interop (crates + hot cue/beat grid conversion). Use when the user mentions rekordbox, their DJ library/collection, track metadata cleanup, playlists, cue/track organization, checking a USB stick, or Serato.
 ---
 
 # rekordvibes
@@ -21,8 +21,8 @@ cd "$(dirname <path to this SKILL.md>)" && ./venv/bin/python scripts/rbx.py <com
 
 Commands: `setup`, `init`, `status`, `recommend`, `clean`, `resolve`,
 `tagsync`, `doctor`, `playlist`, `query`, `backup`, `undo`, `remove`,
-`analyze`, `similar`, `mixable`, `clusters`, `transfer`. Run with `-h`
-for flags.
+`analyze`, `similar`, `mixable`, `clusters`, `transfer`, `usb`. Run with
+`-h` for flags.
 
 First time on a machine: `./bootstrap.sh` (creates the venv, installs core
 deps, runs `rbx setup`), then `rbx init`. See INSTALL.md.
@@ -133,6 +133,41 @@ Bundles are platform-neutral (no absolute paths inside).
   recreated (editable — created after baseline). `rbx undo` deletes the
   imported rows + installed ANLZ dirs; copied audio stays on disk.
 - Does NOT transfer: MyTags, play counts, histories, mixer params.
+
+## USB checking & Serato setup (C9)
+
+`rbx usb check /Volumes/STICK` — read-only integrity ladder over a rekordbox
+device export ("Export to device" stick): export.pdb parse, audio present at
+the exported size (smaller = truncated copy), ANLZ grid/waveform files parse,
+playlist entries resolve, orphans, quick per-file header/duration checks,
+filesystem sanity. Needs no library and no `rbx init` — safe to run on
+anyone's stick, any time, even while rekordbox runs. `--deep` full-decodes
+every file with ffmpeg (slow; suggest it only when quick checks look odd or
+the user suspects corruption). Exit code 0 = healthy.
+
+Serato interop is two commands with a clear division:
+
+- `rbx tagsync --serato [--playlist NAME|--ids|--limit N] [--apply]` — the
+  primary path. Writes Serato hot-cue + beat-grid tag frames onto the LOCAL
+  library files (from DjmdCue + ANLZ). Every stick exported from rekordbox
+  afterwards opens in Serato with cues in place. Standard write rules apply
+  (rekordbox quit, baseline, dry-run first, undo journal restores the old
+  tag bytes exactly). Hot cues only, A–H → Serato 1–8 with colors; memory
+  cues are dropped by design; loop hot cues become a cue at the loop-in.
+  Warn the user: cue edits made inside Serato get overwritten by the next
+  apply, and re-running after cue changes in rekordbox is how you re-sync.
+- `rbx usb serato /Volumes/STICK [--apply]` — builds `_Serato_/database V2`
+  + one crate per playlist (folders nest with `%%`) on the stick, from the
+  stick's own export.pdb. Additive: only `_Serato_/` is created; PIONEER/
+  and audio untouched. `--cues` additionally tags the stick's audio copies
+  from the stick's ANLZ — only for sticks exported before the library was
+  tagged. `--wipe --apply` removes `_Serato_/`. The `--cues` tag batch is
+  undoable via `rbx undo` while the stick is mounted.
+
+Typical flows: "is this USB okay?" → `usb check`. "make my USB work in
+Serato" → `usb serato --apply` (+ `--cues` if their library was never
+tagsynced). "I want my cues in Serato from now on" → `tagsync --serato`
+dry-run, show the table, confirm, apply.
 
 ## Troubleshooting
 
