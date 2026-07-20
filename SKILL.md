@@ -21,7 +21,8 @@ cd "$(dirname <path to this SKILL.md>)" && ./venv/bin/python scripts/rbx.py <com
 
 Commands: `setup`, `init`, `status`, `recommend`, `clean`, `resolve`,
 `tagsync`, `doctor`, `playlist`, `query`, `backup`, `undo`, `remove`,
-`analyze`, `similar`, `mixable`, `clusters`. Run with `-h` for flags.
+`analyze`, `similar`, `mixable`, `clusters`, `transfer`. Run with `-h`
+for flags.
 
 First time on a machine: `./bootstrap.sh` (creates the venv, installs core
 deps, runs `rbx setup`), then `rbx init`. See INSTALL.md.
@@ -110,6 +111,28 @@ Then: `rbx similar TRACK --by rhythm|timbre|both`, `rbx mixable TRACK`
 (rhythm families; `--playlists` creates `[rbx] rhythm ...` playlists — that
 one writes, so dry-run first without the flag and confirm). TRACK is a
 content ID or fuzzy "artist - title".
+
+## Transferring tracks to another library (C8)
+
+`rbx transfer` moves tracks between rekordbox libraries as self-contained
+zip bundles — audio + metadata + hot/memory cues + beat-grid ANLZ files.
+Bundles are platform-neutral (no absolute paths inside).
+
+- `transfer export --playlist NAME` (or `--ids`) `-o bundle.zip` — read-only,
+  safe while rekordbox runs. Streaming/missing tracks are skipped with a
+  warning. Get the zip to the other machine however (AirDrop, scp, USB).
+- `transfer inspect bundle.zip` — list contents.
+- `transfer import bundle.zip [--dest DIR]` — on the receiving machine
+  (needs this repo bootstrapped + `rbx init`, since writes require a
+  baseline). Dry-run → confirm → `--apply` (standard rules: rekordbox quit,
+  backup, undo journal). Audio is COPIED into `--dest` (default
+  `~/Music/rbx-imports/<bundle>/`), never overwriting; DB rows are created
+  via pyrekordbox (content, get-or-create artist/album/genre/key, cues);
+  ANLZ files are installed with their embedded path rewritten so the grid
+  survives (fallback: rekordbox re-analyzes). The bundle's playlist is
+  recreated (editable — created after baseline). `rbx undo` deletes the
+  imported rows + installed ANLZ dirs; copied audio stays on disk.
+- Does NOT transfer: MyTags, play counts, histories, mixer params.
 
 ## Troubleshooting
 

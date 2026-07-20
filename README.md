@@ -26,6 +26,11 @@ carefully, reversibly, and without ever touching your audio files.
   pattern and sound texture. `rbx clusters` sorts your crates into rhythm
   families.
 - **Plays doctor** — missing files, duplicates, tag drift, untracked audio.
+- **Shares the vibes** — `rbx transfer` packs a playlist into a single zip
+  (audio, metadata, hot cues, memory cues, beat grid) that imports into a
+  friend's library on the other side. Their hot cues land exactly where
+  yours were, grid included — no re-analyzing, no re-cueing. AirDrop it,
+  scp it, sneakernet it; the bundle doesn't care.
 - **Builds playlists** — additive only. It can create and manage its own;
   everything that existed before it arrived is frozen, forever.
 
@@ -54,8 +59,9 @@ cd rekordvibes
 Works out of the box on macOS; finds your library automatically (or point
 `RBX_REKORDBOX_DIR` at it). Windows support is written but untested — run
 `bootstrap.ps1` and tell us how it went. Details in [INSTALL.md](INSTALL.md);
-the full command reference lives in [SKILL.md](SKILL.md), and the design doc
-is [SPEC.md](SPEC.md).
+the full command reference with examples is [COMMANDS.md](COMMANDS.md),
+Claude's operating manual is [SKILL.md](SKILL.md), and the design doc is
+[SPEC.md](SPEC.md).
 
 ## Or just let Claude Code do it 🤖
 
