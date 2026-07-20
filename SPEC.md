@@ -1,8 +1,5 @@
 # Spec: `rekordvibes` skill
 
-**Status:** DRAFT v2 for review — nothing implemented yet
-**Target:** Claude Code skill at `~/.claude/skills/rekordvibes/`
-
 ## 1. Purpose
 
 A skill that lets Claude safely manage the local rekordbox 7 collection.
@@ -194,6 +191,104 @@ Commands:
 Not transferred (by design/format): MyTags, play counts, histories, mixer
 params, intelligent playlists.
 
+### C9 — USB checker + Serato setup (`rbx usb`)
+
+Operates on a **rekordbox device export** (a USB prepared via rekordbox's
+"Export to device"), not on master.db. Two subcommands: a read-only
+integrity check, and an opt-in Serato bootstrap so the same stick works in
+Serato DJ.
+
+What's on such a USB (all reverse-engineered, well documented by
+Deep Symmetry's crate-digger project):
+
+- `PIONEER/rekordbox/export.pdb` — DeviceSQL database (tracks, artists,
+  albums, keys, colors, playlist tree, playlist entries). **Not** SQLCipher;
+  a page-based binary format with a public Kaitai Struct definition
+  (`rekordbox_pdb.ksy`) that compiles to Python.
+- `PIONEER/rekordbox/exportExt.pdb` — rb6+ extension DB (MyTags etc.).
+  Parsed if present; failures downgrade to warnings (less-documented format).
+- `PIONEER/USBANLZ/…/ANLZ0000.DAT|.EXT|.2EX` — per-track analysis: beat
+  grid, waveforms, cue/loop data (PCOB/PCO2), phrase. Parsed with the same
+  pyrekordbox `anlz` module C7 already uses.
+- `Contents/…` (or user layout) — the audio files, referenced from the pdb
+  by drive-relative path.
+
+#### `rbx usb check DRIVE` — read-only integrity report
+
+Verification ladder, cheap to expensive:
+
+1. **Structure**: expected directories present; `export.pdb` exists,
+   parses page-by-page, required tables present with sane row counts;
+   ANLZ directory present.
+2. **Cross-reference**: every track row → audio file exists on the drive,
+   non-zero size; ANLZ .DAT/.EXT exist and parse; every playlist entry
+   points to an existing track row; report orphaned audio files on the
+   drive that no track row references.
+3. **Audio integrity** — `--quick` (default): mutagen opens every file,
+   header/stream-info sane, file size consistent with duration × bitrate
+   (catches truncated copies, the most common USB corruption). Size-rule
+   caveat: export.pdb carries the library DB's recorded file_size, which
+   can differ by a few bytes/KB from the exported file when tags were
+   edited after import — a small deficit (≤ ~64 KB or 0.1%) whose header
+   still parses with pdb-matching duration is WARN `audio-size-drift`;
+   only larger deficits FAIL as truncation.
+   `--deep`: full decode of every file via ffmpeg (`-f null`) to surface
+   mid-file corruption; slow, progress-barred, resumable.
+4. **Device sanity**: filesystem is FAT32/exFAT/HFS+ (CDJ-readable set,
+   with per-model caveats noted), no file over the FAT32 4 GB limit,
+   volume has a label.
+
+Output: human-readable report grouped by severity (fail / warn / info) +
+`--json` for scripting; non-zero exit code on any fail. **Never writes a
+byte to the drive.** Works standalone — no `rbx init`, no master.db, no
+rekordbox install needed, so it can vet a stranger's stick before a gig.
+
+#### `rbx usb serato DRIVE` — make the same stick Serato-ready
+
+Serato DJ treats any drive containing a root-level `_Serato_` folder as a
+portable library. Two phases:
+
+- **Phase 1 — library + crates (default)**: generate
+  `_Serato_/database V2` and one `_Serato_/Subcrates/<name>.crate` per
+  rekordbox playlist (folder nesting via Serato's `%%` subcrate naming),
+  paths drive-relative, from the same export.pdb the checker parses.
+  Both files are simple, well-documented tag-length-value formats
+  (documented by the triseratops / serato-tags projects); writers are
+  small and live in this repo. Purely **additive**: creates `_Serato_/`
+  only, touches nothing else. Re-runnable (regenerates); `--wipe` removes
+  the `_Serato_` folder to return the stick to rekordbox-only state.
+- **Phase 2 — performance data**: Serato keeps cues and beat grid
+  **inside the audio files' tags** — GEOB frames (`Serato Markers2`,
+  `Serato BeatGrid`) for MP3, equivalent MP4 atoms / FLAC Vorbis fields
+  elsewhere — its database holds only the track list. So performance data
+  is delivered by tagging the audio files, and the **primary home for
+  that is the library, not the stick**: a new tagsync lane
+  (`rbx tagsync --serato`) writes/refreshes Serato cue+grid frames on the
+  local library files from master.db/ANLZ data. Because rekordbox's
+  "Export to device" copies files verbatim, every subsequently exported
+  USB carries the Serato tags automatically — `usb serato` then only has
+  to build `_Serato_/`. Same change class as C2 (tag header only, audio
+  stream and paths untouched; rekordbox addresses cues in audio-time, so
+  added tag bytes are invisible to it), same rails: drift report,
+  dry-run, per-file undo journal. `usb serato --cues` remains as a
+  fallback that applies the same tagging directly to a stick's copies
+  (for sticks exported before the library was tagged).
+
+Mapping decisions (confirmed): **hot cues only, straight across, max 8**
+— A–H → Serato cues 1–8, colors carried over; memory cues are dropped
+entirely. Beat grid → Serato grid markers (both formats support
+non-constant grids); key → Serato's key field. Loops, phrase data,
+MyTags, ratings: out of scope.
+
+#### C9 rails
+
+- `PIONEER/`, `Contents/`, and the pdb files are **never written** — the
+  rekordbox side of the stick is read-only to this feature in all modes.
+- All writes (Phase 1 files, Phase 2 tags) target only `_Serato_/` or
+  embedded tag headers, are dry-run-first, journaled, and undoable.
+- `usb check` re-run after `usb serato --cues` must still pass — that's
+  an acceptance test, not a hope.
+
 ## 4. Safety model (non-negotiable rails)
 
 1. **rekordbox must be quit for any write** (preflight `pgrep`; skill asks the
@@ -247,6 +342,8 @@ params, intelligent playlists.
 2. **feat. placement**: artists field ("A feat. B") or title ("Song (feat. B)")?
 3. **Casing policy**: leave as-is, or normalize to Title Case?
 4. **Music folder roots** for the untracked-files scan (C4) — which folders?
+5. **C9 crate scope**: mirror the full playlist tree, or let the user pick
+   playlists (`--playlist`, repeatable)? Default: full tree.
 
 ## 7. Acceptance tests
 
@@ -264,3 +361,22 @@ params, intelligent playlists.
   the copied file → `undo` removes rows + installed ANLZ dirs completely.
 - Import refuses: hash mismatch (before any write), dest file collision,
   track already in collection (per-track skip, not abort).
+- `usb check` on a fresh rekordbox export passes clean; truncate one audio
+  file → `--quick` flags exactly that file (a small size deficit with an
+  intact header and matching duration is only WARNed as `audio-size-drift`
+  — real sticks show stale pdb sizes when tags changed after import, so it
+  must not fail the check); delete one ANLZ dir → flagged;
+  drive with no `PIONEER/` → clear "not a rekordbox export" failure, exit
+  non-zero. Byte-compare the whole drive before/after → identical (read-only
+  proof).
+- `tagsync --serato` on a test playlist → Serato loads each local file
+  showing cues 1–8 at rekordbox's hot cue positions (millisecond match,
+  colors carried), grid downbeats agree; rekordbox still opens the same
+  files with cues/grid unchanged; `undo` strips the frames byte-exactly.
+  A USB exported *after* tagging carries the cues into Serato with no
+  further steps.
+- `usb serato` on that stick → Serato DJ opens the drive, every crate
+  matches its source playlist name and track list, all tracks load and play.
+  With `--cues` (fallback for pre-tagging exports): same cue/grid checks
+  as above. Re-run `usb check` → still passes. `--wipe` (plus tag undo)
+  restores the pre-serato drive state.

@@ -841,6 +841,12 @@ def cmd_transfer(args):
     transfer.dispatch(args, sys.modules[__name__])
 
 
+def cmd_usb(args):
+    import usbcheck
+
+    usbcheck.dispatch(args, sys.modules[__name__])
+
+
 def cmd_undo(args):
     journals = sorted(UNDO_DIR.glob("*.json"))
     if not journals:
@@ -849,6 +855,26 @@ def cmd_undo(args):
     journal = json.loads(jpath.read_text())
     n_entries = len(journal.get("entries", journal.get("playlists", [])))
     print(f"Undoing {jpath.name} ({n_entries} entries)")
+    if journal["cmd"] == "serato-tags":
+        # file-tag-only batch: master.db was never touched, no DB open needed
+        import serato
+
+        restored = 0
+        for e in journal["entries"]:
+            if not Path(e["path"]).exists():
+                print(f"  skipped {e['path']} (file not found — drive unplugged?)")
+                continue
+            old = {k: (bytes.fromhex(v) if v else None)
+                   for k, v in e["old_serato"].items()}
+            try:
+                serato.restore_serato_tags(e["path"], old)
+                restored += 1
+            except Exception as ex:
+                print(f"  restore failed for {e['path']}: {ex}")
+        done = jpath.with_suffix(".undone")
+        jpath.rename(done)
+        print(f"Restored Serato tags on {restored} files. Journal archived as {done.name}")
+        return
     db = open_db(write=True)
     bdir = backup_now("pre-undo")
     print(f"Backup: {bdir}")
@@ -906,7 +932,121 @@ def cmd_undo(args):
     print(f"Undo complete. Journal archived as {done.name}")
 
 
+def _tagsync_serato(args):
+    """Serato lane: write Serato hot-cue + beat-grid tag frames onto local
+    library files, from DjmdCue + ANLZ. Hot cues only, straight across (A-H ->
+    Serato cues 1-8, colors carried); memory cues dropped. Because rekordbox's
+    USB export copies files verbatim, every stick exported afterwards carries
+    the cues into Serato with no extra steps."""
+    import logging
+
+    import analysis as an
+    import serato
+    from pyrekordbox.db6 import tables
+
+    # ANLZ files contain tags pyrekordbox doesn't know (PVDI etc.) — not our problem
+    logging.getLogger("pyrekordbox.anlz.file").setLevel(logging.ERROR)
+    db = open_db()
+    tracks = _scope_tracks(db, args)
+    if args.limit:
+        tracks = tracks[: args.limit]
+    cues_by_content = {}
+    for cue in db.query(tables.DjmdCue).filter(tables.DjmdCue.Kind > 0):
+        cues_by_content.setdefault(str(cue.ContentID), []).append(cue)
+
+    plan = []  # (content, payloads, status_word, n_cues, n_loops, grid_desc)
+    n_insync = 0
+    for c in tracks:
+        path = c.FolderPath or ""
+        if not is_local(path) or not Path(path).exists():
+            continue
+        dbcues = sorted(cues_by_content.get(str(c.ID), []), key=lambda q: q.Kind)
+        cues = [{"index": q.Kind - 1, "ms": int(q.InMsec or 0),
+                 "color": serato.cue_color(q.ColorTableIndex),
+                 "name": q.Comment or ""}
+                for q in dbcues if 1 <= q.Kind <= 8 and (q.InMsec or 0) >= 0]
+        n_loops = sum(1 for q in dbcues if 1 <= q.Kind <= 8 and (q.OutMsec or 0) > 0)
+
+        grid = end_bpm = None
+        try:
+            files = an._anlz_files(c)
+        except Exception:
+            files = {}
+        for kind in ("DAT", "EXT"):
+            f = files.get(kind)
+            # NB: never truthiness-test AnlzFile — its __len__ infinitely recurses
+            if f is not None and "PQTZ" in f.tag_types:
+                beats, bpms, times = f.get_tag("PQTZ").get()
+                grid, end_bpm = serato.grid_to_serato_markers(
+                    [float(t) for t in times], [float(b) for b in bpms])
+                break
+        if not cues and grid is None:
+            continue
+
+        payloads = {}
+        if cues:
+            payloads[serato.MARKERS2_NAME] = serato.markers2_payload(cues)
+        if grid:
+            payloads[serato.BEATGRID_NAME] = serato.beatgrid_payload(grid, end_bpm)
+        try:
+            existing = serato.read_serato_tags(path)
+        except Exception:
+            existing = {}
+        if all(existing.get(k) == v for k, v in payloads.items()):
+            n_insync += 1
+            continue
+        status = "update" if any(existing.get(k) for k in payloads) else "new"
+        grid_desc = ("none" if grid is None
+                     else ("stable" if len(grid) == 1 else f"dynamic({len(grid)})"))
+        plan.append((c, payloads, status, len(cues), n_loops, grid_desc))
+
+    print(f"{len(plan)} files need Serato tags written ({n_insync} already in sync):")
+    for c, _, status, n_cues, n_loops, grid_desc in plan[:200]:
+        loops = f", {n_loops} loop-cues at in-point" if n_loops else ""
+        print(f"  [{status:6}] id={c.ID}  {c.Artist.Name if c.Artist else '?'} - {c.Title}"
+              f"  ({n_cues} cues{loops}, grid {grid_desc})")
+    if len(plan) > 200:
+        print(f"  ... and {len(plan) - 200} more")
+    if not plan:
+        return
+    if not args.apply:
+        print("\nDRY RUN. --apply writes Serato cue/grid tag frames into the files")
+        print("(tag header only — audio stream, filenames and rekordbox data untouched;")
+        print(" any cue edits made inside Serato on these files will be overwritten).")
+        return
+
+    require_closed()
+    require_baseline()  # tag writes bypass open_db(write=True), so gate here too
+    journal = {"cmd": "serato-tags", "time": datetime.now().isoformat(), "entries": []}
+    n_ok = n_err = 0
+    for c, payloads, *_ in plan:
+        try:
+            old = serato.write_serato_tags(c.FolderPath, payloads)
+        except Exception as e:
+            n_err += 1
+            print(f"  tag write failed for {c.FolderPath}: {e}", file=sys.stderr)
+            continue
+        if old is None:
+            n_err += 1
+            print(f"  unsupported container, skipped: {c.FolderPath}", file=sys.stderr)
+            continue
+        journal["entries"].append({
+            "id": str(c.ID), "path": c.FolderPath,
+            "old_serato": {k: (v.hex() if v else None) for k, v in old.items()
+                           if k in payloads},
+        })
+        n_ok += 1
+    UNDO_DIR.mkdir(exist_ok=True)
+    jpath = UNDO_DIR / f"serato-tags-{ts()}.json"
+    jpath.write_text(json.dumps(journal, indent=2))
+    print(f"Wrote Serato tags on {n_ok} files ({n_err} failed). Undo journal: {jpath}")
+    print("Sticks exported from rekordbox from now on carry these cues into Serato.")
+
+
 def cmd_tagsync(args):
+    if args.serato:
+        _tagsync_serato(args)
+        return
     db = open_db()
     drift = []
     contents = [c for c in db.get_content().all() if is_local(c.FolderPath)]
@@ -1529,6 +1669,11 @@ def main():
     p = sp.add_parser("tagsync", help="report/fix DB vs embedded-tag drift")
     p.add_argument("--apply", action="store_true", help="write DB values into file tags")
     p.add_argument("--limit", type=int)
+    p.add_argument("--serato", action="store_true",
+                   help="Serato lane: write hot-cue + beat-grid tag frames (from "
+                        "DjmdCue/ANLZ) so USB exports open in Serato with cues intact")
+    p.add_argument("--playlist", help="restrict scope to one playlist (with --serato)")
+    p.add_argument("--ids", help="comma-separated content IDs (with --serato)")
 
     p = sp.add_parser("doctor", help="missing files / duplicates / untracked")
     p.add_argument("--missing", action="store_true")
@@ -1609,6 +1754,23 @@ def main():
     x.add_argument("--no-playlist", action="store_true", help="don't recreate the bundle's playlist")
     x.add_argument("--apply", action="store_true")
 
+    p = sp.add_parser("usb", help="rekordbox USB export: integrity check + Serato setup")
+    us = p.add_subparsers(dest="usb_cmd", required=True)
+    x = us.add_parser("check", help="read-only integrity ladder over an exported stick")
+    x.add_argument("drive", help="mount point, e.g. /Volumes/MYUSB")
+    x.add_argument("--deep", action="store_true",
+                   help="full ffmpeg decode of every audio file (slow, catches mid-file corruption)")
+    x.add_argument("--json", action="store_true", help="machine-readable report")
+    x = us.add_parser("serato", help="create _Serato_ (database V2 + crates) on the stick")
+    x.add_argument("drive", help="mount point, e.g. /Volumes/MYUSB")
+    x.add_argument("--playlist", action="append",
+                   help="only these playlists (repeatable; default: whole tree)")
+    x.add_argument("--cues", action="store_true",
+                   help="also write Serato cue/grid tags onto the stick's audio files "
+                        "(fallback for sticks exported before `tagsync --serato`)")
+    x.add_argument("--wipe", action="store_true", help="remove _Serato_ from the stick")
+    x.add_argument("--apply", action="store_true", help="write (default: dry run)")
+
     p = sp.add_parser("undo", help="reverse the latest (or named) write batch")
     p.add_argument("journal", nargs="?")
 
@@ -1630,6 +1792,7 @@ def main():
         "playlist": cmd_playlist,
         "query": cmd_query,
         "transfer": cmd_transfer,
+        "usb": cmd_usb,
         "undo": cmd_undo,
         "backup": cmd_backup,
     }[args.cmd](args)
