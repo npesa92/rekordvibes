@@ -1,0 +1,17 @@
+# per-machine — never commit
+venv/
+config.json
+
+# library-derived state — regenerates; belongs to each machine's library
+analysis.db
+.snapshot/
+undo-journals/
+resolve/
+exports/
+
+# python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

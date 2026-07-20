@@ -1,0 +1,3 @@
+# Core: metadata cleanup, tagsync, playlists, doctor, query, remove, undo.
+pyrekordbox>=0.4.4
+mutagen>=1.47

@@ -1,0 +1,8 @@
+# Optional extras for the `analyze` rhythm/timbre lanes (~400 MB installed).
+# The grid lane (rekordbox's own ANLZ data) works without these.
+numpy
+librosa>=0.10
+soundfile
+# audioid lane additionally needs the fpcalc binary:
+#   macOS: brew install chromaprint
+#   Windows: https://acoustid.org/chromaprint (or set RBX_FPCALC)
