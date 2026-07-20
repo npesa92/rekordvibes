@@ -57,5 +57,29 @@ Works out of the box on macOS; finds your library automatically (or point
 the full command reference lives in [SKILL.md](SKILL.md), and the design doc
 is [SPEC.md](SPEC.md).
 
+## Or just let Claude Code do it 🤖
+
+This repo *is* a [Claude Code](https://claude.com/claude-code) skill — the
+whole thing is designed to be driven by Claude, not memorized by you. The
+lazy (correct) install is to open Claude Code and say:
+
+> Install the skill at https://github.com/npesa92/rekordvibes.git
+> into my skills directory
+
+Claude will clone it into `~/.claude/skills/rekordvibes` and run the
+bootstrap. From then on, just talk to it about your library:
+
+> *"what's the state of my rekordbox library?"* → `rbx status` / `recommend`
+> *"clean up my metadata"* → dry-run, shows you the table, waits for your yes
+> *"what mixes out of this track?"* → `rbx mixable`
+
+Claude Code runs with real system permissions — it can create the venv, read
+the library, and write fixes — so it will ask you to approve commands along
+the way; that's the permission model working as intended. The guardrails
+travel with the skill: [SKILL.md](SKILL.md) instructs Claude to always
+dry-run first, show you a digestible summary, and never apply anything
+without your explicit confirmation — and the CLI enforces the same rules
+underneath even if it's asked nicely.
+
 Now go fix your library. Your future self, mid-set, in the dark, scrolling
 for the next track — they're counting on you. ✨
