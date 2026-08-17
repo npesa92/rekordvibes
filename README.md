@@ -108,3 +108,19 @@ patterns for the title cleaner, and bug reports with an `rbx status` dump
 attached. Open an issue or a PR. All contributions must follow the safety
 model above: anything that touches the library must be dry-run first,
 reversible, and must never modify audio files.
+
+## License & trademarks
+
+Released under the MIT License — see [LICENSE](LICENSE).
+
+rekordbox™ and Pioneer DJ™ are trademarks of AlphaTheta Corporation.
+Serato™ is a trademark of Serato Audio Research. This project is an
+independent, unofficial tool and is **not affiliated with, endorsed by, or
+sponsored by** AlphaTheta Corporation, Pioneer DJ, or Serato Audio
+Research. Those names are used only to describe what this software is
+compatible with.
+
+This software reads and writes your rekordbox library directly. It is
+provided as is, without warranty of any kind — back up your library and
+use `--dry-run` first. You are responsible for your own compliance with
+the license terms of any DJ software you use it alongside.
