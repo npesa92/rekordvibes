@@ -334,19 +334,6 @@ MyTags, ratings: out of scope.
   (rekordbox ≥ 6.6.5 keys aren't extractable locally; pyrekordbox fetches the
   known key once, needs network).
 
-## 6. Remaining open questions
-
-1. **Sample-driven parse rules**: I'd like to read ~30 real titles from a
-   *copy* of the DB (read-only) before finalizing C1's regex/heuristics —
-   OK to do as the first implementation step?
-2. **feat. placement**: artists field ("A feat. B") or title ("Song (feat. B)")?
-3. **Casing policy**: leave as-is, or normalize to Title Case?
-4. **Music folder roots** for the untracked-files scan (C4) — which folders?
-5. **C9 crate scope**: mirror the full playlist tree, or let the user pick
-   playlists (`--playlist`, repeatable)? Default: full tree.
-
-## 7. Acceptance tests
-
 - Clean 5 polluted tracks in a test playlist → rekordbox reopens showing
   correct Artist/Title/Album, all 5 playable, cues/grids intact, no missing-
   file badges, embedded tags match.
